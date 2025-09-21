@@ -1,14 +1,26 @@
+# main.py
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl
 from typing import Optional, List
-from app.model import MisinformationDetector
+
+# --- Lazy import for heavy modules ---
+detector = None
+
+def get_detector():
+    global detector
+    if detector is None:
+        from app.model import MisinformationDetector
+        detector = MisinformationDetector()
+    return detector
+
 from app.scraper import scrape_text_from_url
 from app.utils import fetch_wikipedia_snippets
 
+# --- FastAPI app ---
 app = FastAPI(title="AI-Powered Misinformation Detector")
 
-# Allow requests from frontend
+# CORS for frontend
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -26,8 +38,7 @@ app.add_middleware(
 def read_root():
     return {"message": "AI-Powered Misinformation Detector is running!"}
 
-detector = MisinformationDetector()
-
+# --- Request/Response models ---
 class PredictRequest(BaseModel):
     text: Optional[str] = None
     url: Optional[HttpUrl] = None
@@ -39,6 +50,7 @@ class PredictResponse(BaseModel):
     tips: List[str]
     wiki_matches: List[str]
 
+# --- Predict endpoint ---
 @app.post("/predict", response_model=PredictResponse)
 async def predict(data: PredictRequest):
     content = ""
@@ -51,7 +63,9 @@ async def predict(data: PredictRequest):
     else:
         raise HTTPException(status_code=400, detail="Either text or url must be provided.")
 
-    label, confidence = detector.predict(content)
+    # Lazy-load ML model
+    detector_instance = get_detector()
+    label, confidence = detector_instance.predict(content)
 
     explanation = {
         "Likely True": "The content appears to be credible based on AI analysis.",
@@ -66,7 +80,7 @@ async def predict(data: PredictRequest):
         "Verify facts using trusted fact-checking websites."
     ]
 
-    # For wiki matches, try to extract keywords from content (simple heuristic: first 5 words)
+    # Simple wiki keyword heuristic
     keywords = " ".join(content.split()[:5])
     wiki_matches = fetch_wikipedia_snippets(keywords)
 
@@ -77,3 +91,11 @@ async def predict(data: PredictRequest):
         tips=tips,
         wiki_matches=wiki_matches
     )
+
+# --- Run server ---
+if __name__ == "__main__":
+    import os
+    import uvicorn
+
+    port = int(os.environ.get("PORT", 8000))  # Dynamic port for Render/Vercel
+    uvicorn.run("main:app", host="0.0.0.0", port=port, log_level="info")
