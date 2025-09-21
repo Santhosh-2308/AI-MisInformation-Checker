@@ -21,5 +21,5 @@ COPY . .
 # Expose port for Render
 EXPOSE 8000
 
-# Run FastAPI with uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# Run FastAPI with uvicorn (note: app.main, not main)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "$PORT"]
